@@ -8,26 +8,36 @@ for PyVISA 1.8
 contains elements from an acquisition script written by Romaric Le Goff
 """
 
-import visa
+
 import numpy as np
 from time import sleep
+from P13pt.drivers.base import PyvisaInstrument, WrongInstrumentError
 
-class K2400:
+class K2400(PyvisaInstrument) :
+    """
+    Python object meant to represent the connexion with a
+    KEITHLEY INSTRUMENTS INC.,MODEL 2400
+    """
+    
+    model = 'KEITHLEY INSTRUMENTS INC.,MODEL 2400'
+    k2400 = property(lambda self : self.instrument)
+    
     def __init__(self, connection, sourcemode='V', vrang=None, irang=None,
                  slope=0.01, initialise=True, average=None, average_mode='REP',
                  speed=10.):
-        self.slope = slope
-        self.time_step = 0.01     # update voltage every 10 ms when sloping
         
-        # set up connection
-        self.rm = visa.ResourceManager()
-        self.k2400 = self.rm.open_resource(connection)
-        self.k2400.write_termination = '\n'
-        self.k2400.read_termination = '\n'        
+        super(K2400, self).__init__(connection)
+        
+        self.slope = slope
+        self.time_step = 0.02    # update voltage every 20 ms when sloping
+           
         self.k2400.clear()
+        self.k2400.timeout *= 2  # The default value of 2s is too strict
                
-        if not self.query('*IDN?').startswith('KEITHLEY INSTRUMENTS INC.,MODEL 2400'):
-            raise Exception('Instrument not compatible with Keithley 2400 driver')
+        if not self.query('*IDN?').startswith(
+                'KEITHLEY INSTRUMENTS INC.,MODEL 2400'):
+            raise WrongInstrumentError(
+                'Instrument not compatible with Keithley 2400 driver')
 
         if initialise:        
             self.write(":STATus:QUEue:CLEar")
@@ -114,11 +124,12 @@ class K2400:
         self.query(':SENS:FUNC:OFF "CURR:DC"')
         self.query(':SENS:FUNC:ON "VOLT:DC"')
         return float(self.query(':read?').split(',')[0])
-        
+
     def get_current(self):
         self.query(':SENS:FUNC:OFF "VOLT:DC"')
         self.query(':SENS:FUNC:ON "CURR:DC"')
         return float(self.query(':read?').split(',')[1])
+    
     
     def get_speed(self):
         """
@@ -167,17 +178,6 @@ class K2400:
     def set_average_state(self, value):
         value = '1' if value else '0'
         self.write(':SENS:AVER:STAT '+value)
-
-    # just wrapping the main functions of self.k2400
-    def query(self, q):
-        return self.k2400.query(q)
-    
-    def ask(self, q):
-        return self.k2400.query(q)
-    
-    def write(self, q):
-        return self.k2400.write(q)
-
 
 if __name__ == '__main__':
     k2400 = K2400('GPIB::24::INSTR')
