@@ -7,7 +7,7 @@ from __future__ import print_function
 from typing import Text
 
 try :
-    from P13pt.mascril.progressbar_wait import wait
+    from P13pt.mascril.progressbar import wait
 except ImportError :
     import time
     wait = time.sleep
