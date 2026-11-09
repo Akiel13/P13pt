@@ -1,38 +1,103 @@
-import sys
-import imp
 import os
+import sys
 import traceback
-from PyQt5.QtCore import (pyqtSlot, pyqtSignal, Qt, QSize, qInstallMessageHandler, QtInfoMsg, QtCriticalMsg, QtDebugMsg,
-                          QtWarningMsg, QtFatalMsg, QPoint)
-from PyQt5.QtGui import QFont, QTextCursor, QIcon
-from PyQt5.QtWidgets import (QWidget, QTextEdit, QPushButton, QLineEdit, QVBoxLayout, QHBoxLayout,
-                         QTableWidget, QTableWidgetItem, QFileDialog, QMessageBox, QApplication,
-                         QSplitter, QComboBox, QLabel, QHeaderView)
-from P13pt.mascril.measurement import MeasurementBase       # we have to import it the same way (from the same parent
-                                                            # modules) as we will do it in the acquisition scripts,
-                                                            # otherwise they will not be recognised as the same
-                                                            # class
-from P13pt.mascril.measurement import MeasurementParameter  # idem
-from P13pt.mascril.plotter import Plotter
-try:
-    from PyQt5.QtCore import QString
-except ImportError:
-    QString = str
-
 import numpy as np
 
-class ReadOnlyConsole(QTextEdit):
+
+# PyQt imports
+try :
+    import PyQt6.QtGui as QtGui
+    import PyQt6.QtCore as QtCore
+    from PyQt6.QtCore import QtMsgType
+    import PyQt6.QtWidgets as QtWidgets
+    try :
+        from PyQt6.QtCore import QString
+    except ImportError :
+        QString = str
+    QWindowMaximized = QtCore.Qt.WindowState.WindowMaximized
+    QItemIsEditable = QtCore.Qt.ItemFlag.ItemIsEditable
+    QStretch = QtWidgets.QHeaderView.ResizeMode.Stretch
+    QNoWrap = QtWidgets.QTextEdit.LineWrapMode.NoWrap
+    QEnd = QtGui.QTextCursor.MoveOperation.End
+    QToolTip = QtCore.Qt.WindowType.ToolTip
+    Qwhite = QtGui.QColorConstants.White
+    Qgreen = QtGui.QColorConstants.Green
+    Qgray = QtGui.QColorConstants.Gray
+    Qred = QtGui.QColorConstants.Red
+except ImportError :
+    import PyQt5.QtGui as QtGui
+    import PyQt5.QtCore as QtCore
+    import PyQt5.QtCore as QtMsgType
+    import PyQt5.QtWidgets as QtWidgets
+    try :
+        from PyQt5.QtCore import QString
+    except ImportError :
+        QString = str
+    QWindowMaximized = QtCore.Qt.WindowMaximized
+    QItemIsEditable = QtCore.Qt.ItemIsEditable
+    QStretch = QtWidgets.QHeaderView.Stretch
+    QNoWrap = QtWidgets.QTextEdit.NoWrap
+    QEnd = QtGui.QTextCursor.End
+    QToolTip = QtCore.Qt.ToolTip
+    Qwhite = QtCore.Qt.white
+    Qgreen = QtCore.Qt.green
+    Qgray = QtCore.Qt.gray
+    Qred = QtCore.Qt.red
+    
+
+# P13pt imports
+from P13pt.mascril.measurement import MeasurementBase
+# we have to import it the same way (from the same parent modules) as we do in
+# the acquisition scripts, otherwise they will not be recognised as the same class
+from P13pt.mascril.measurement import MeasurementParameter  # idem
+from P13pt.mascril.plotter import Plotter
+
+
+# importlib import
+if sys.version_info.major < 3 or sys.version_info.minor < 9 :
+    import imp
+else :
+    import importlib.util
+    import importlib.machinery
+    class DeprecatedModule :
+        pass
+    def load_source(modname, filename, cache_the_module=False):
+        """
+        Generic replacement for imp.load_source for versions of python where the imp module is deprecated
+        copy/pasted from : https://docs.python.org/3/whatsnew/3.12.html#imp
+        I added a new argument : cache_the_module ; if set to True, the module will be cached in sys.modules
+        """
+        loader = importlib.machinery.SourceFileLoader(modname, filename)
+        spec = importlib.util.spec_from_file_location(modname, filename, loader=loader)
+        module = importlib.util.module_from_spec(spec)
+        if cache_the_module :
+            sys.modules[module.__name__] = module
+        loader.exec_module(module)
+        return module
+    imp = DeprecatedModule()
+    imp.load_source = load_source
+    imp.cache_from_source = importlib.util.cache_from_source
+    imp.find_module = importlib.util.find_spec
+    imp.load_module = importlib.import_module
+    imp.reload = importlib.reload
+    imp.source_from_cache = importlib.util.source_from_cache
+
+
+
+
+
+class ReadOnlyConsole(QtWidgets.QTextEdit):
     def __init__(self, parent=None):
         super(ReadOnlyConsole, self).__init__(parent)
         self.setReadOnly(True)
         self.setAcceptRichText(False)
-        self.setLineWrapMode(QTextEdit.NoWrap)
-        font = QFont()
+        self.setLineWrapMode(QNoWrap)
+        font = QtGui.QFont()
         font.setFamily(u"DejaVu Sans Mono")
         font.setPointSize(10)
         self.setFont(font)
 
-    @pyqtSlot(str)
+    @QtCore.pyqtSlot(str)
     def write(self, data):
         """
             This uses insertPlainText (maybe in a later version HTML, so that we can change
@@ -43,15 +108,15 @@ class ReadOnlyConsole(QTextEdit):
         :return: nothing
         """
         # move cursor to end (in case user clicked somewhere else in the window)
-        cursor = QTextCursor(self.document())
-        cursor.movePosition(QTextCursor.End)
+        cursor = QtGui.QTextCursor(self.document())
+        cursor.movePosition(QEnd)
         self.setTextCursor(cursor)
 
         while True: # find all carriage returns
             i = data.find('\r')
             if i >= 0: # means we have to deal with a carriage return
                 self.insertPlainText(QString(data[0:i]))
-                cursor.select(QTextCursor.LineUnderCursor)
+                cursor.select(QtGui.QTextCursor.LineUnderCursor)
                 cursor.removeSelectedText()
                 data = data[i+1:]
             else:
@@ -63,10 +128,13 @@ class ReadOnlyConsole(QTextEdit):
         sb.setValue(sb.maximum())
 
 
-class mainwindow(QWidget):
+
+
+
+class mainwindow(QtWidgets.QWidget):
     # set up signals
-    module_selected = pyqtSignal()
-    module_loaded = pyqtSignal()
+    module_selected = QtCore.pyqtSignal()
+    module_loaded = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         super(mainwindow, self).__init__(parent)
@@ -75,47 +143,48 @@ class mainwindow(QWidget):
         self.m = None
 
         # set up splitter widget
-        l = QVBoxLayout()
+        l = QtWidgets.QVBoxLayout()
         self.setLayout(l)
-        self.splitter = QSplitter(self)
+        self.splitter = QtWidgets.QSplitter(self)
         l.addWidget(self.splitter)
 
         # set up module interface widget
-        scriptinterfacewidget = QWidget(self.splitter)
-        self.txt_acquisition_script = QLineEdit('Path to acquistion script...')
+        scriptinterfacewidget = QtWidgets.QWidget(self.splitter)
+        self.txt_acquisition_script = QtWidgets.QLineEdit('Path to acquistion script...')
         self.txt_acquisition_script.setReadOnly(True)
-        self.btn_browse = QPushButton(QIcon('../icons/folder.png'), '')
+        self.btn_browse = QtWidgets.QPushButton(QtGui.QIcon('../icons/folder.png'), '')
         self.btn_browse.setToolTip('Browse')
-        l1 = QHBoxLayout()
+        l1 = QtWidgets.QHBoxLayout()
         for w in [self.txt_acquisition_script, self.btn_browse]:
             l1.addWidget(w)
-        self.btn_load = QPushButton(QIcon('tools-wizard.png'), '')
+        self.btn_load = QtWidgets.QPushButton(QtGui.QIcon('tools-wizard.png'), '')
         self.btn_load.setToolTip('Load module')
-        self.btn_run = QPushButton(QIcon('../icons/start.png', ), '')
+        self.btn_run = QtWidgets.QPushButton(QtGui.QIcon('../icons/start.png', ), '')
         self.btn_run.setToolTip('Run module')
-        self.btn_stopmod = QPushButton(QIcon('../icons/stop.png'), '')
+        self.btn_stopmod = QtWidgets.QPushButton(QtGui.QIcon('../icons/stop.png'), '')
         self.btn_stopmod.setToolTip('Stop module')
-        self.btn_forcestopmod = QPushButton(QIcon('../icons/kill.png'), '')
+        self.btn_forcestopmod = QtWidgets.QPushButton(QtGui.QIcon('../icons/kill.png'), '')
         self.btn_forcestopmod.setToolTip('Kill module')
-        self.btn_help = QPushButton(QIcon('../icons/help.png'), '')
+        self.btn_help = QtWidgets.QPushButton(QtGui.QIcon('../icons/help.png'), '')
         self.btn_help.setToolTip('Show step-by-step help')
         for btn in [self.btn_load, self.btn_run, self.btn_stopmod, self.btn_forcestopmod, self.btn_help]:
-            btn.setIconSize(QSize(32,32))
+            btn.setIconSize(QtCore.QSize(32,32))
         for btn in [self.btn_run, self.btn_stopmod, self.btn_forcestopmod]:
             btn.setEnabled(False)
-        l2 = QHBoxLayout()
+        l2 = QtWidgets.QHBoxLayout()
         for w in [self.btn_load, self.btn_run, self.btn_stopmod, self.btn_forcestopmod, self.btn_help]:
             l2.addWidget(w)
         # set up parameters table
-        self.lbl_params = QLabel('<b>Module parameters:</b>')
-        self.tbl_params = QTableWidget()
+        self.lbl_params = QtWidgets.QLabel('<b>Module parameters:</b>')
+        self.tbl_params = QtWidgets.QTableWidget()
         self.tbl_params.setColumnCount(2)
         self.tbl_params.setHorizontalHeaderLabels(['Name', 'Value'])
         self.tbl_params.verticalHeader().hide()
         self.tbl_params.horizontalHeader().setStretchLastSection(True)
-        self.lbl_readonlyconsole = QLabel('<b>Terminal output:</b>')
+        self.tbl_params.horizontalHeader().setSectionResizeMode(0, QStretch)
+        self.lbl_readonlyconsole = QtWidgets.QLabel('<b>Terminal output:</b>')
         self.readonlyconsole = ReadOnlyConsole()
-        l_siw = QVBoxLayout(scriptinterfacewidget)
+        l_siw = QtWidgets.QVBoxLayout(scriptinterfacewidget)
         for l in [l1, l2]:
             l_siw.addLayout(l)
         for w in [self.lbl_params, self.tbl_params,
@@ -126,25 +195,25 @@ class mainwindow(QWidget):
         self.plotter = Plotter(self.splitter)
 
         # set up observables widget
-        observablesinterfacewidget = QWidget(self.splitter)  # this widget will contain the observables list and the alarms
+        observablesinterfacewidget = QtWidgets.QWidget(self.splitter)  # this widget will contain the observables list and the alarms
         # set up observables table
-        self.lbl_observables = QLabel('<b>Observables:</b>', observablesinterfacewidget)
-        self.tbl_observables = QTableWidget(observablesinterfacewidget)
+        self.lbl_observables = QtWidgets.QLabel('<b>Observables:</b>', observablesinterfacewidget)
+        self.tbl_observables = QtWidgets.QTableWidget(observablesinterfacewidget)
         self.tbl_observables.setColumnCount(2)
         self.tbl_observables.setHorizontalHeaderLabels(['Name', 'Value'])
         self.tbl_observables.verticalHeader().hide()
         self.tbl_observables.horizontalHeader().setStretchLastSection(True)
         # set up alarms table
-        self.lbl_alarm = QLabel('<b>Alarms:</b>', observablesinterfacewidget)
-        self.tbl_alarms = QTableWidget(observablesinterfacewidget)
+        self.lbl_alarm = QtWidgets.QLabel('<b>Alarms:</b>', observablesinterfacewidget)
+        self.tbl_alarms = QtWidgets.QTableWidget(observablesinterfacewidget)
         self.tbl_alarms.setColumnCount(3)
         self.tbl_alarms.setHorizontalHeaderLabels(['Condition', 'Action', 'Value'])
-        self.tbl_alarms.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tbl_alarms.horizontalHeader().setSectionResizeMode(QStretch)
         self.tbl_alarms.verticalHeader().hide()
-        self.btn_addalarm = QPushButton("Add alarm", observablesinterfacewidget)
+        self.btn_addalarm = QtWidgets.QPushButton("Add alarm", observablesinterfacewidget)
         self.btn_addalarm.setEnabled(False)
         # put everything in a layout
-        l = QVBoxLayout(observablesinterfacewidget)
+        l = QtWidgets.QVBoxLayout(observablesinterfacewidget)
         for w in [self.lbl_observables, self.tbl_observables, self.lbl_alarm, self.tbl_alarms, self.btn_addalarm]:
             l.addWidget(w)
 
@@ -157,14 +226,14 @@ class mainwindow(QWidget):
         self.tbl_alarms.cellChanged.connect(self.alarm_modified)
 
         # set window size.
-        self.setWindowState(Qt.WindowMaximized)
+        self.setWindowState(QWindowMaximized)
 
         # set window title
         self.setWindowTitle("MAScriL - Mercury Acquisition Script Launcher")
 
         # set up step by step help
-        self.lbl_step_help = QLabel(self)
-        #self.lbl_step_help.setWindowFlag(Qt.ToolTip)
+        self.lbl_step_help = QtWidgets.QLabel(self)
+        #self.lbl_step_help.setWindowFlag(QToolTip)
         self.lbl_step_help.setStyleSheet('QLabel {background-color: #FF6666; padding: 5px; padding-bottom: 15px;}')
         self.lbl_step_help.linkActivated.connect(self.on_step_help_link)
         self.step_help_count = 1
@@ -182,7 +251,7 @@ class mainwindow(QWidget):
         for i, step in enumerate(self.step_help):
             step[3].connect(make_lambda(i))
 
-    @pyqtSlot(QString)
+    @QtCore.pyqtSlot(QString)
     def on_step_help_link(self, str):
         if str == 'close':
             self.lbl_step_help.hide()
@@ -192,7 +261,7 @@ class mainwindow(QWidget):
         else:
             raise Exception('Unsupported link')
 
-    @pyqtSlot()
+    @QtCore.pyqtSlot()
     def next_step_help(self, check_step=None, close_last=False):
         # check if we should update the step help
         if self.step_help_count == 0 or (check_step and check_step != self.step_help_count):
@@ -222,13 +291,13 @@ class mainwindow(QWidget):
                                    '<a href="next" style="text-decoration: none;">&#x27a1;</a>'+
                                    '</span>'+
                                    '<div style="margin-left: 10px; margin-right: 10px;">'+
-                                       '<b>'+title+'</b><br>'+text+
+                                   '<b>'+title+'</b><br>'+text+
                                    '</div>')
         self.lbl_step_help.adjustSize()
         if point == 'bottomright':
-            self.lbl_step_help.move(widget.mapTo(self, QPoint(widget.width()-5, widget.height()-5)))
+            self.lbl_step_help.move(widget.mapTo(self, QtCore.QPoint(widget.width()-5, widget.height()-5)))
         elif point == 'topleft':
-            self.lbl_step_help.move(widget.mapTo(self, QPoint(5, 5)))
+            self.lbl_step_help.move(widget.mapTo(self, QtCore.QPoint(5, 5)))
         else:
             raise Exception("Invalid position")
 
@@ -242,19 +311,19 @@ class mainwindow(QWidget):
             else:
                 self.lbl_step_help.hide()
 
-    @pyqtSlot()
+    @QtCore.pyqtSlot()
     def browse_acquisition_script(self):
         modulespath = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'modules')
-        filename, filt = QFileDialog.getOpenFileName(self, 'Open File', directory=modulespath, filter='*.py')
+        filename, filt = QtWidgets.QFileDialog.getOpenFileName(self, 'Open File', directory=modulespath, filter='*.py')
         if filename:
             self.txt_acquisition_script.setText(filename)
             self.module_selected.emit()
 
-    @pyqtSlot()
+    @QtCore.pyqtSlot()
     def load_module(self):
         # check if there is a running module
         if isinstance(self.m, MeasurementBase) and self.m.isRunning():
-            QMessageBox.critical(self, "Error", "Cannot load a new module when the previous one is not done.")
+            QtWidgets.QMessageBox.critical(self, "Error", "Cannot load a new module when the previous one is not done.")
             return
 
         # tidy up
@@ -269,7 +338,7 @@ class mainwindow(QWidget):
         self.tbl_alarms.blockSignals(True)      # we will modify the alarms table, so disable signals
 
         # indicate we are loading
-        self.btn_load.setIcon(QIcon('../icons/wait.png'))
+        self.btn_load.setIcon(QtGui.QIcon('../icons/wait.png'))
         self.repaint()
         self.plotter.repaint()
 
@@ -280,13 +349,13 @@ class mainwindow(QWidget):
         try:
             mod = imp.load_source(mod_name, filename)
             if not hasattr(mod, 'Measurement') or not issubclass(getattr(mod, 'Measurement'), MeasurementBase):
-                QMessageBox.critical(self, "Error", "Could not get correct class from file.")
+                QtWidgets.QMessageBox.critical(self, "Error", "Could not get correct class from file.")
             else:
                 module_loaded = True
-        except IOError as e:
-            QMessageBox.critical(self, "Error", "Could not load file: "+str(e.args[1]))
-        except Exception as e:
-            QMessageBox.critical(self, "Error", "Could not load module: "+traceback.format_exc())
+        except IOError as exc :
+            QtWidgets.QMessageBox.critical(self, "Error", "Could not load file: "+str(exc.args[1]))
+        except Exception :
+            QtWidgets.QMessageBox.critical(self, "Error", "Could not load module: "+traceback.format_exc())
 
         if module_loaded:
             self.m = getattr(mod, 'Measurement')(redirect_console=True)
@@ -294,8 +363,8 @@ class mainwindow(QWidget):
             # set up parameter table
             self.tbl_params.setRowCount(len(self.m.params))
             for i,key in enumerate(self.m.params):
-                item = QTableWidgetItem(key)
-                item.setFlags(item.flags()^Qt.ItemIsEditable)
+                item = QtWidgets.QTableWidgetItem(key)
+                item.setFlags(item.flags()^QItemIsEditable)
                 self.tbl_params.setItem(i, 0, item)
                 value = self.m.params[key]
                 if isinstance(value, list):
@@ -306,7 +375,7 @@ class mainwindow(QWidget):
                     self.tbl_params.setCellWidget(i, 1, value.widget)
                     value.mainwindow = self
                 else:
-                    self.tbl_params.setItem(i, 1, QTableWidgetItem(str(value)))
+                    self.tbl_params.setItem(i, 1, QtWidgets.QTableWidgetItem(str(value)))
 
             # set up plotter
             self.plotter.set_header(self.m.observables)
@@ -315,8 +384,8 @@ class mainwindow(QWidget):
             self.tbl_observables.setRowCount(len(self.m.observables))
             for i, label in enumerate(self.m.observables):
                 for j in [0, 1]:
-                    item = QTableWidgetItem(label if j==0 else '')
-                    item.setFlags(item.flags()^Qt.ItemIsEditable)
+                    item = QtWidgets.QTableWidgetItem(label if j==0 else '')
+                    item.setFlags(item.flags()^QItemIsEditable)
                     self.tbl_observables.setItem(i, j, item)
 
             # set up alarms table
@@ -344,18 +413,18 @@ class mainwindow(QWidget):
             self.module_loaded.emit()
 
         # activate some other buttons regardless of if the module was successfully loaded
-        self.btn_load.setIcon(QIcon('tools-wizard.png'))
+        self.btn_load.setIcon(QtGui.QIcon('tools-wizard.png'))
         for w in [self.btn_browse, self.btn_load, self.btn_help]:
             w.setEnabled(True)
 
-    @pyqtSlot()
+    @QtCore.pyqtSlot()
     def run_module(self):
         # check if no other module is running and if the module we loaded is valid
         if isinstance(self.m, MeasurementBase) and self.m.isRunning():
-            QMessageBox.critical(self, "Error", "Cannot run a new module when the previous one is not done.")
+            QtWidgets.QMessageBox.critical(self, "Error", "Cannot run a new module when the previous one is not done.")
             return
         elif not isinstance(self.m, MeasurementBase):
-            QMessageBox.critical(self, "Error", "Please load a valid module first.")
+            QtWidgets.QMessageBox.critical(self, "Error", "Please load a valid module first.")
             return
 
         # deactivate request_quit flag in case process has been stopped previously
@@ -372,7 +441,7 @@ class mainwindow(QWidget):
                 try:
                     self.m.params[key] = eval(value, {'np': np})
                 except Exception as e:
-                    QMessageBox.critical(self, "Error", "Parameter '"+key+"' could not be evaluated: "+str(e.args[0]))
+                    QtWidgets.QMessageBox.critical(self, "Error", "Parameter '"+key+"' could not be evaluated: "+str(e.args[0]))
                     return
 
         # disable parameter editing
@@ -400,7 +469,7 @@ class mainwindow(QWidget):
         self.btn_run.setEnabled(True)
         self.btn_load.setEnabled(True)
 
-    @pyqtSlot()
+    @QtCore.pyqtSlot()
     def add_alarm(self):
         # temporarily block the signals while we set up the new row in the alarms table
         blocked = self.tbl_alarms.signalsBlocked()
@@ -411,10 +480,10 @@ class mainwindow(QWidget):
         i = self.tbl_alarms.rowCount() - 1
 
         # create an editable field for the alarm condition
-        self.tbl_alarms.setItem(i, 0, QTableWidgetItem())
+        self.tbl_alarms.setItem(i, 0, QtWidgets.QTableWidgetItem())
 
         # create a combo box for the alarm action
-        cmb = QComboBox()
+        cmb = QtWidgets.QComboBox()
         for value, text in [(MeasurementBase.ALARM_SHOWVALUE, 'show value'),
                             (MeasurementBase.ALARM_QUIT, 'stop acquisition'),
                             (MeasurementBase.ALARM_CALLCOPS, 'call the cops')]:
@@ -422,17 +491,17 @@ class mainwindow(QWidget):
         self.tbl_alarms.setCellWidget(i, 1, cmb)
 
         # create a non-editable field for the alarm info
-        item = QTableWidgetItem()
-        item.setFlags(item.flags()^Qt.ItemIsEditable)
+        item = QtWidgets.QTableWidgetItem()
+        item.setFlags(item.flags()^QItemIsEditable)
         self.tbl_alarms.setItem(i, 2, item)
 
-        # when the QComboBox is changed, we want to emit the cellChanged signal correspondingly
+        # when the QtWidgets.QComboBox is changed, we want to emit the cellChanged signal correspondingly
         cmb.currentIndexChanged.connect(lambda: self.tbl_alarms.cellChanged.emit(i, 1))
 
         # unblock the signals, if they were previously unblocked
         self.tbl_alarms.blockSignals(blocked)
 
-    @pyqtSlot(int, int)
+    @QtCore.pyqtSlot(int, int)
     def alarm_modified(self, row, column):
         # update the alarms
         alarms = []
@@ -442,61 +511,73 @@ class mainwindow(QWidget):
             alarms.append([condition, action])
         self.m.alarms = alarms
 
-    @pyqtSlot(list)
+    @QtCore.pyqtSlot(list)
     def new_data_handler(self, data):
         for i,value in enumerate(data):
             self.tbl_observables.item(i, 1).setText(str(value))
         self.plotter.new_data_handler(data)
 
-    @pyqtSlot(list)
+    @QtCore.pyqtSlot(list)
     def new_alarm_data_handler(self, data):
         for i,d in enumerate(data):
             action = self.tbl_alarms.cellWidget(i, 1).currentData()
             result_field = self.tbl_alarms.item(i, 2)
-            self.tbl_alarms.item(i, 2).setBackground(Qt.white)
+            self.tbl_alarms.item(i, 2).setBackground(Qwhite)
             if isinstance(d, Exception):
                 result_field.setText('could not evaluate: '+str(d))
+                result_field.setBackground(Qgray)
                 continue
             if action == MeasurementBase.ALARM_SHOWVALUE:
                 result_field.setText(str(d))
             elif action == MeasurementBase.ALARM_QUIT:
                 if data[i]:
                     result_field.setText('stopping acquisition...')
-                    result_field.setBackground(Qt.red)
+                    result_field.setBackground(Qred)
             elif action == MeasurementBase.ALARM_CALLCOPS:
                 if data[i]:
                     result_field.setText('calling the cops...')
-                    result_field.setBackground(Qt.red)
+                    result_field.setBackground(Qred)
                 else:
                     result_field.setText('OK...')
-                    result_field.setBackground(Qt.green)
+                    result_field.setBackground(Qgreen)
+
+
 
 def msghandler(type, context, message):
-    if type == QtInfoMsg:
-        QMessageBox.information(None, 'Info', message)
-    elif type == QtDebugMsg:
-        QMessageBox.information(None, 'Debug', message)
-    elif type == QtCriticalMsg:
-        QMessageBox.critical(None, 'Critical', message)
-    elif type == QtWarningMsg:
-        QMessageBox.warning(None, 'Warning', message)
-    elif type == QtFatalMsg:
-        QMessageBox.critical(None, 'Fatal error', message)
+    if type == QtMsgType.QtInfoMsg:
+        QtWidgets.QMessageBox.information(None, 'Info', message)
+    elif type == QtMsgType.QtDebugMsg:
+        QtWidgets.QMessageBox.information(None, 'Debug', message)
+    elif type == QtMsgType.QtCriticalMsg:
+        QtWidgets.QMessageBox.critical(None, 'Critical', message)
+    elif type == QtMsgType.QtWarningMsg:
+        QtWidgets.QMessageBox.warning(None, 'Warning', message)
+    elif type == QtMsgType.QtFatalMsg:
+        QtWidgets.QMessageBox.critical(None, 'Fatal error', message)
+
+
 
 def main():
-    qInstallMessageHandler(msghandler)
+    QtCore.qInstallMessageHandler(msghandler)
 
     # CD into directory where this script is saved
     d = os.path.dirname(__file__)
     if d != '': os.chdir(d)
 
-    app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon('tools-wizard.png'))
+    app = QtWidgets.QApplication(sys.argv)
+    app.setWindowIcon(QtGui.QIcon('tools-wizard.png'))
 
     w = mainwindow()
     w.show()
-     
-    sys.exit(app.exec_())
+    print()
+    
+    if hasattr(app, "exec") :
+        execute_app = getattr(app, "exec")
+    else :
+        execute_app = app.exec_
+    sys.exit(execute_app())
+
+
 
 if __name__ == "__main__":
     main()
