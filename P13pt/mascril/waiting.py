@@ -1,5 +1,7 @@
 import sys
 import time
+try : import tkinter as tk
+except ImportError : pass
 
 def progressbar(value=0, length=20):
     sys.stdout.write('\r[' + value*'#' + (length-value) * '.' + '] {:>3d}%'.format(int(value*100/length)))
@@ -18,3 +20,18 @@ def progressbar_wait(timespan, length=20):
         if value >= length:
             break
         time.sleep(0.01)    # update every 10 ms
+
+def wait(seconds) :
+    if seconds < 5 :
+        return time.sleep(seconds)
+    return progressbar_wait(seconds)
+
+
+
+def wait_for_manual_input() :
+    print("Measurement on hold. Please close the pop-up window to continue.")
+    popup = tk.Tk()
+    label = tk.Label(popup, text="Measurement will resume when this window is closed.")
+    label.pack()
+    popup.mainloop()
+    # Todo : add some life (picture, emojis) to this window.
