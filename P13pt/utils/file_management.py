@@ -8,12 +8,40 @@ MAScriL, to be neatly packaged in a single place.
 
 from __future__ import print_function
 import os
-import tarfile
 import json
+import tarfile
 import numpy as np
+import unicodedata
 
-from typing import Text, Callable, List
+
+# Know the date
+import time
+today = time.strftime("%Y-%m-%d")
+
+from typing import Text, Callable, Collection, List, Optional, Dict
 from functools import wraps
+
+
+
+
+
+def without_characters_forbidden_in_a_filename(string) :
+    handled_characters = {"/":"", "|":"", "\\":"", ":":"", '"':"", "?":"", "*":"", "<":"", ">":""}
+    for char in handled_characters.keys() :
+        string = handled_characters[char].join(string.split(char))
+    return string
+
+
+def without_accents(string) :
+    """
+    This is some unicode magic that I copy/pasted from an answer to :
+    https://stackoverflow.com/questions/517923/
+    """
+    nfkd_form = unicodedata.normalize('NFKD', string)
+    return str(u"".join([c for c in nfkd_form if not unicodedata.combining(c)]))
+
+
+
 
 
 def create_folder(path) :
@@ -40,6 +68,9 @@ def create_folder(path) :
     except FileExistsError :
         return False
 create_folder.__annotations__ = {'path':Text, 'return':bool}
+dump_directory = r"D:\Dump"
+create_folder(dump_directory)
+
 
 
 
@@ -52,12 +83,12 @@ Once you have defined a decorator like 'my_decorator', you can use
 
 @my_decorator
 def my_function(...) :
-    ...
+    (...)
 
-This acts a contraction of :
+This acts like :
 
 def my_function(...) :
-    ...
+    (...)
 my_function = my_decorator(my_function)
 """
 def preserve_cwd(function) :
@@ -76,6 +107,20 @@ def preserve_cwd(function) :
         return returned_value
     return decorated_function
 preserve_cwd.__annotations__ = {'function':Callable, 'return':Callable}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -109,9 +154,26 @@ def select_observables(lines, labels, renamed_labels={}) :
     Can take a dictionnary as a third, optional argument ; any string that
     appears in the key of the dictionnary and as the topmost element of a
     column will be replaced by the associated value stored in the dictionnary.
+    
+
+    Parameters
+    ----------
+    lines : List[Text]
+        DESCRIPTION.
+    labels : TYPE
+        DESCRIPTION.
+    renamed_labels : TYPE, optional
+        DESCRIPTION. The default is {}.
+
+    Returns
+    -------
+    new_lines : TYPE
+        DESCRIPTION.
     """
-    new_lines = select_columns(lines,
-                               select_indices(lines, labels, renamed_labels))
+    # Trimming unwanted columns
+    relevant_column_indices = select_indices(lines, labels, renamed_labels)
+    new_lines = select_columns(lines, relevant_column_indices)
+    # Replacing column titles by their renamed versions
     columns_titles = split_header(new_lines[0])
     for j, title in enumerate(columns_titles) :
         while title in renamed_labels.keys() :
@@ -124,18 +186,18 @@ def select_observables(lines, labels, renamed_labels={}) :
 
 
 def unpack_txt(lines) :
+    # Header
     header = {title:j for j,title in enumerate(split_header(lines[0]))}
-    if ("," in lines[0]) and not ("\t" in lines[0]) :
-        data = np.loadtxt(
-          lines[1:],
-          converters={k:interpret_bitstring for k,_ in enumerate(header)},
-          delimiter = ","
-          )
+    comma_separated_values = ("," in lines[0]) and not ("\t" in lines[0])
+    
+    # Data
+    converters = {k:string_to_float for k,_ in enumerate(header)}
+    # Nb : with recent versions of numpy, converters = bitstring_to_float
+    # would work as well. But it's not retrocompatible.
+    if comma_separated_values :
+        data = np.loadtxt(lines[1:], converters=converters, delimiter=",")
     else :
-        data = np.loadtxt(
-          lines[1:],
-          converters={k:interpret_bitstring for k,_ in enumerate(header)}
-          )
+        data = np.loadtxt(lines[1:], converters=converters)
     return header, data
 
 
@@ -146,11 +208,23 @@ def split_header(header) :
     Takes a string, and splits the part after its last '#' at each tabulation
     and comma. Intended use case is the first line of .txt datafiles saved from
     Qtiplot or MasCril, to get all the column titles.
+    
+
+    Parameters
+    ----------
+    header : Text
+        String to be split.
+
+    Returns
+    -------
+    List[Text]
+        List of the elements of the split string.
     """
     return header.strip().split("#")[-1].replace(",","\t").split("\t")
+split_header.__annotations__ = {'header':Text, 'return':List[Text]}
 
 def select_columns(lines, selected_indices) :
-    # type: (List[Text], Collection[Text]) -> List[Text]
+    # type: (List[Text], Collection[int]) -> List[Text]
     """
     Takes a list of strings, and a list of integers.
     
@@ -176,6 +250,7 @@ def select_columns(lines, selected_indices) :
         selected_values = [values[i] for i in good_indices]
         new_lines.append('\t'.join(selected_values) + '\n')
     return new_lines
+select_columns.__annotations__ = {'lines':List[Text], 'return':List[Text], 'selected_indices':Collection[int]}
 
 def select_indices(lines, labels, renamed_labels={}) :
     # type: (List[Text], Collection[Text], Optional[Dict[Text, Text]]) -> List[Text]
@@ -205,7 +280,7 @@ def select_indices(lines, labels, renamed_labels={}) :
             selected_columns.append(columns_titles.index(label))
         except ValueError :
             print(f"⚠ No {label} in the data ⚠")
-            # to replace by a raised warning ?
+            # to replace with a user warning ?
     return selected_columns
 
 
@@ -215,24 +290,166 @@ def select_indices(lines, labels, renamed_labels={}) :
 
 # Treatment of .txt files in general
 
+def pack_txt(header, data) :
+    """
+    Converts a header dictionnary and a numpy array into a mascril-type
+    list of strings.
+
+    Parameters
+    ----------
+    header : TYPE
+        DESCRIPTION.
+    data : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    lines : TYPE
+        DESCRIPTION.
+    """
+    lines = []
+    list_header = [label for label in header.keys()]
+    first_line = "#" + "\t".join(list_header) + "\n"
+    lines.append(first_line)
+    for row in data :
+        liste = [str(x) for x in row]
+        lines.append("\t".join(liste) + "\n")
+    return lines
+
 @preserve_cwd
-def save_as_txt(lines, filename, path) :
+def save_as_txt(lines, filename, path, verbose=True) :
+    """
+    Saves 
+
+    Parameters
+    ----------
+    lines : List[Text]
+        DESCRIPTION.
+    filename : Text
+        DESCRIPTION.
+    path : Text
+        DESCRIPTION.
+    verbose : bool, optional
+        Whether writing / overwriting messages will be printed.
+        The default is True.
+
+    Returns
+    -------
+    None.
+    """
     output_filepath = os.path.join(path, filename)
-    if os.path.exists(output_filepath) :
+    if verbose and os.path.exists(output_filepath) :
         print(f"‼️ Overwriting {output_filepath}")
-    else :
+    elif verbose :
         print(f"✍🏽 Writing {output_filepath}")
     with open(output_filepath, 'w') as output_file :
         output_file.writelines(lines)
 
 
-def interpret_bitstring(bitstring) :
-    return interpret_string(bitstring.decode())  
+def bitstring_to_float(bitstring) :
+    """
+    Acts like the float() function on bitstrings, but :
+        - commas are treated as decimal points.
+        - returns None if the input is b"None" or b"".
+
+    Parameters
+    ----------
+    bitstring : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    evaluation : float or None
+        DESCRIPTION.
+    """
+    return string_to_float(bitstring.decode())  
 
 
-def interpret_string(string) :
+def string_to_float(string) :
+    """
+    Acts like the float() function on strings, but :
+        - commas are treated as decimal points.
+        - retruns None if the input is "None" or "".
+    """
     string = string.strip()
     if string in ["None", ""] :
         return None
     string = ".".join(string.split(","))
     return float(string)
+
+
+
+
+
+## Treatment of TAR archives
+
+def readlines_from_archive(filename, archive) :
+    txt_files = [name for name in archive.getnames() if ".txt" in name]
+    if len(txt_files) == 0 :
+        raise FileNotFoundError("There is no .txt file to load in the archive")
+        return []
+    if len(txt_files) == 1 :
+        txt_name = txt_files[0]
+    elif len(txt_files) >= 2 :
+        txt_name = filename.split(".")[0] + ".txt"
+    with archive.extractfile(txt_name) as txt :
+        lines = [line.decode() for line in txt.readlines()]
+    return lines
+
+
+def generate_archiving_function(work_directory=dump_directory,
+                                results_archive=f"dump_{today}.tar") :
+    @preserve_cwd
+    def archive_file(filename,
+                     work_directory=work_directory,
+                     results_archive=results_archive) :
+        os.chdir(work_directory)
+        with tarfile.open(results_archive,"a") as archive :
+            archive.add(filename, arcname=filename.split("\\")[-1])
+        print(f"✅ '{filename}' saved")
+    return archive_file
+
+archive_file = generate_archiving_function()
+
+
+
+
+## Treatment of JSON files
+
+def generate_json_save_function(work_directory=dump_directory,
+                                results_archive=f"dump_{today}.tar") :
+    @preserve_cwd
+    def save_as_json(dico, json_name, directory=None) :
+        if directory is None :
+            directory = work_directory
+        os.chdir(directory)
+        with open(json_name, 'w') as file:
+            json.dump(dico, file)
+        generate_archiving_function(work_directory, results_archive)(os.path.join(directory, json_name))
+    return save_as_json
+
+save_as_json = generate_json_save_function()
+
+def load_json(filepath) :
+    with open(filepath, 'r') as file :
+        return json.load(file)
+
+
+
+## Multi file type 
+
+@preserve_cwd
+def read_datafile(filepath) :
+    extension = ".".join(filepath.split(".")[1:])
+    lines = []
+    print(f"📖 Reading {filepath}")
+    if extension == "txt" :
+        with open(filepath) as txt_file :
+            lines = txt_file.readlines()
+    if extension == "tar" :
+        with tarfile.open(filepath, "r") as archive :
+            lines = readlines_from_archive(filepath, archive)
+    if extension == "tar.gz" :
+        with tarfile.open(filepath, "r:gz") as archive :
+            lines = readlines_from_archive(filepath, archive)
+    return lines
