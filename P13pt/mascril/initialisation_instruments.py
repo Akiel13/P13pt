@@ -1,7 +1,7 @@
-import P13pt.mascril.addresses as adress
+import P13pt.mascril.adresses as adress
 import P13pt.mascril.acquire as acquire
 
-# 🌡️ Temperature controlers 🌡️
+# 🌡️ Temperature controlers 🌡️ 
 from P13pt.drivers.si9700 import SI9700
 from P13pt.drivers.tic500 import TIC500
 
@@ -12,7 +12,7 @@ from P13pt.drivers.keithley2400 import K2400
 from P13pt.drivers.keithley2600 import K2600
 from P13pt.drivers.keithley2612 import K2612
 
-# 📻 Vector Network Analyzers 📻
+# 📻 Vector Network Analyzers 📻    
 from P13pt.drivers.anritsuvna import AnritsuVNA
 from P13pt.drivers.rohdeschwarz_drivers.rohdeschwarz.instruments.vna import Vna as RohdeSchwarzVNA
 """
@@ -21,12 +21,13 @@ from P13pt.drivers.bsc203 import BSC203Motor
 """
 
 import numpy as np
+import os
 
 
 
 
-def initialise_temperature(measurement) :
-    """🌡️ Initialization of the temperature controlers 🌡️
+def initialise_temperature(measurement, verbose=False) :
+    """🌡️ Initialization of the temperature controlers 🌡️ 
     
     If the measurement station is 'JANIS', the temperature controller will be
     the SI9700.
@@ -58,6 +59,8 @@ def initialise_temperature(measurement) :
     except AttributeError :
         measurement_station = None
     
+    measurement.temperature_controller = None
+    
     # Initialise SI9700 temperature controler
     if measurement_station == 'JANIS' :
         try :
@@ -65,7 +68,7 @@ def initialise_temperature(measurement) :
             machine_adress = adress.si9700['JANIS']
             measurement.temperature_controller = SI9700(machine_adress)
             print("🌡️ Temperature controller SI9700 is set up.")
-            print("------------------------------")
+            print("----------------------------------------")
         except Exception as exc :
             print("⛔ There has been an error setting up the SI9700 temperature controller.")
             raise exc
@@ -77,7 +80,7 @@ def initialise_temperature(measurement) :
             machine_adress = adress.tic500['Cascade']
             measurement.temperature_controller = TIC500(machine_adress)
             print("🌡️ Temperature controller TIC500 is set up.")
-            print("------------------------------")
+            print("----------------------------------------")
         except Exception as exc :
             print("⛔ There has been an error setting up the TIC500 temperature controller.")
             raise exc
@@ -88,9 +91,11 @@ def initialise_temperature(measurement) :
 
 
 
-def initialise_voltage_sources(measurement, src_Vds, src_Vg, slope_vg_vd=.5,
-                               reset_instruments=True, src_Vchuck="None",
-                               slope_vchuck=1) :
+def initialise_voltage_sources(measurement, src_Vds, src_Vg,
+                               Vds_speed=.5, Vg_speed=.5,
+                               reset_instruments=True,
+                               src_Vchuck="None", Vchuck_speed=1,
+                               verbose=False) :
     """⚡ Initialisation of the voltage sources ⚡
     
     
@@ -144,79 +149,72 @@ def initialise_voltage_sources(measurement, src_Vds, src_Vg, slope_vg_vd=.5,
     sourceVds = None
     sourceVg = None
     
-    # Checking if we asked for different speeds for Vg & Vds
-    try :
-        Vg_speed = slope_vg_vd[0]
-        Vds_speed = slope_vg_vd[1]
-    except TypeError :
-        Vg_speed = slope_vg_vd
-        Vds_speed = slope_vg_vd
-    
     try :
         measurement_station = measurement.measurement_station
     except AttributeError :
         measurement_station = None
     
+    
     # Initialise K2400_24 voltage source / ammeter
-    if 'K2400_adress24' in (src_Vg, src_Vds, src_Vchuck) :
+    if True in ['K2400' in src for src in (src_Vg, src_Vds, src_Vchuck) if not src.endswith("2")] :
         try :
-            print("⚡ Setting up K2400_24 DC source...")
-            machine_adress = adress.k2400_24[measurement_station]
-            if 'K2400_adress24' == src_Vg : 
+            print("⚡ Setting up K2400 DC source...")
+            machine_adress = adress.k2400[measurement_station]
+            if 'K2400' in src_Vg and not src_Vg.endswith("2") : 
                 sourceVg = K2400(machine_adress, sourcemode='v', vrang=200,
                                  irang=None, slope=Vg_speed,
                                  initialise=reset_instruments)
                 measurement.sourceVg = sourceVg
                 measurement.meterVg = sourceVg
                 measurement.meterIleak = sourceVg
-            if 'K2400_adress24' == src_Vds : 
+            if 'K2400' in src_Vds and not src_Vds.endswith("2") : 
                 sourceVds = K2400(machine_adress, sourcemode='v', vrang=200,
                                   irang=None, slope=Vds_speed,
                                   initialise=reset_instruments)
                 measurement.sourceVds = sourceVds
                 measurement.meterVds = sourceVds
                 measurement.meterIds = sourceVds
-            if 'K2400_adress24' == src_Vchuck : 
+            if 'K2400' in src_Vchuck and not src_Vchuck.endswith("2") : 
                 sourceVchuck = K2400(machine_adress, sourcemode='v', vrang=200,
-                                     irang=None, slope=slope_vchuck,
+                                     irang=None, slope=Vchuck_speed,
                                      initialise=reset_instruments)
                 measurement.sourceVchuck = sourceVchuck
                 measurement.meterVchuck = sourceVchuck
                 measurement.meterIchuck = sourceVchuck
-            print("⚡ K2400_24 voltage source & ammeter are set up.")
-            print("------------------------------")
+            print("⚡ K2400 voltage source & ammeter are set up.")
+            print("----------------------------------------")
         except Exception as exc :
             print("⛔ There has been an error setting up K2400_24 voltage source.")
             raise exc
     
     # Initialise K2400_2
-    if 'K2400_adress2' in (src_Vg, src_Vds, src_Vchuck) :
+    if True in ['K2400' in src for src in (src_Vg, src_Vds, src_Vchuck) if not src.endswith("2")] :
         try :
-            print("⚡ Setting up K2400_02 DC source...")
+            print("⚡ Setting up second K2400 DC source...")
             machine_adress = adress.k2400_2[measurement_station]
-            if 'K2400_adress2' == src_Vg : 
+            if 'K2400' in src_Vg and src_Vg.endswith("2") : 
                 sourceVg = K2400(machine_adress, sourcemode='v', vrang=200,
                                  irang=None, slope=Vg_speed,
                                  initialise=reset_instruments)
                 measurement.sourceVg = sourceVg
                 measurement.meterVg = sourceVg
                 measurement.meterIleak = sourceVg
-            if 'K2400_adress2' == src_Vds : 
+            if 'K2400' in src_Vds and src_Vds.endswith("2") : 
                 sourceVds = K2400(machine_adress, sourcemode='v', vrang=200,
                                   irang=None, slope=Vds_speed,
                                   initialise=reset_instruments)
                 measurement.sourceVds = sourceVds
                 measurement.meterVds = sourceVds
                 measurement.meterIds = sourceVds
-            if 'K2400_adress2' == src_Vchuck : 
+            if 'K2400' in src_Vchuck and src_Vchuck.endswith("2") : 
                 sourceVchuck = K2400(machine_adress, sourcemode='v', vrang=200,
-                                     irang=None, slope=slope_vchuck,
+                                     irang=None, slope=Vchuck_speed,
                                      initialise=reset_instruments)
                 measurement.sourceVchuck = sourceVchuck
                 measurement.meterVchuck = sourceVchuck
                 measurement.meterIchuck = sourceVchuck
-            print("K2400_02 voltage source & ammeter are set up.")
-            print("------------------------------")
+            print("Second K2400 voltage source & ammeter are set up.")
+            print("----------------------------------------")
         except Exception as exc :
             print("⛔ There has been an error setting up K2400_02 voltage source.")
             raise exc
@@ -226,50 +224,50 @@ def initialise_voltage_sources(measurement, src_Vds, src_Vg, slope_vg_vd=.5,
         try :
             print("⚡ Setting up K2600 DC sources...")
             machine_adress = adress.k2600[measurement_station]
-            if src_Vg in ('K2600 channel A') :
-                sourceVg = K2600(machine_adress,
+            if 'K2600' in src_Vg and (src_Vg.endswith("A") or "channel a" in src_Vg.lower()) :
+                sourceVg = K2600(machine_adress, channel='A',
                                  slope=Vg_speed,
                                  initialise=reset_instruments)
                 measurement.sourceVg = sourceVg
                 measurement.meterVg = sourceVg
                 measurement.meterIleak = sourceVg
-            elif src_Vg in ('K2600', 'K2600 channel B') : 
+            elif 'K2600' in src_Vg : 
                 sourceVg = K2600(machine_adress, channel='B',
                                  slope=Vg_speed,
                                  initialise=reset_instruments)
                 measurement.sourceVg = sourceVg
                 measurement.meterVg = sourceVg
                 measurement.meterIleak = sourceVg
-            if src_Vds in ('K2600', 'K2600 channel A') :
-                sourceVds = K2600(machine_adress,
-                                  slope=Vds_speed,
-                                  initialise=reset_instruments, reset=False)
-                measurement.sourceVds = sourceVds
-                measurement.meterVds = sourceVds
-                measurement.meterIds = sourceVds
-            elif src_Vds in ('K2600 channel B') :
+            if 'K2600' in src_Vds and (src_Vchuck.endswith("B") or "channel b" in src_Vds.lower()) :
                 sourceVds = K2600(machine_adress, channel='B',
+                                  slope=Vds_speed, 
+                                  initialise=reset_instruments, reset=False)
+                measurement.sourceVds = sourceVds
+                measurement.meterVds = sourceVds
+                measurement.meterIds = sourceVds
+            elif 'K2600' in src_Vds :
+                sourceVds = K2600(machine_adress, channel='A',
                                   slope=Vds_speed,
                                   initialise=reset_instruments, reset=False)
                 measurement.sourceVds = sourceVds
                 measurement.meterVds = sourceVds
                 measurement.meterIds = sourceVds
-            if src_Vchuck in ('K2600 channel A') : 
-                sourceVchuck = K2600(machine_adress,
-                                     slope=slope_vchuck,
+            if 'K2600' in src_Vchuck and (src_Vchuck.endswith("A") or "channel a" in src_Vchuck.lower()) :
+                sourceVchuck = K2600(machine_adress, channel='A',
+                                     slope=Vchuck_speed,
                                      initialise=reset_instruments)
                 measurement.sourceVchuck = sourceVchuck
                 measurement.meterVchuck = sourceVchuck
                 measurement.meterIchuck = sourceVchuck
-            elif src_Vchuck in ('K2600', 'K2600 channel B') :
+            elif 'K2600' in src_Vchuck : 
                 sourceVchuck = K2600(machine_adress, channel='B',
-                                     slope=slope_vchuck,
+                                     slope=Vchuck_speed,
                                      initialise=reset_instruments)
                 measurement.sourceVchuck = sourceVchuck
                 measurement.meterVchuck = sourceVchuck
                 measurement.meterIchuck = sourceVchuck
             print("⚡ K2600 voltage sources & ammeters are set up.")
-            print("------------------------------")
+            print("----------------------------------------")
         except Exception as exc :
             print("⛔ There has been an error setting up K2600 voltage sources.")
             raise exc
@@ -279,50 +277,50 @@ def initialise_voltage_sources(measurement, src_Vds, src_Vg, slope_vg_vd=.5,
         try :
             print("⚡ Setting up K2612 DC sources...")
             machine_adress = adress.k2612[measurement_station]
-            if src_Vg in ('K2612 channel A') :
+            if 'K2612' in src_Vg and (src_Vg.endswith("A") or "channel a" in src_Vg.lower()) :
                 sourceVg = K2612(machine_adress,
                                  slope=Vg_speed,
                                  initialise=reset_instruments)
                 measurement.sourceVg = sourceVg
                 measurement.meterVg = sourceVg
                 measurement.meterIleak = sourceVg
-            elif src_Vg in ('K2612', 'K2612 channel B') : 
+            elif 'K2612' in src_Vg : 
                 sourceVg = K2612(machine_adress, channel='B',
                                  slope=Vg_speed,
                                  initialise=reset_instruments)
                 measurement.sourceVg = sourceVg
                 measurement.meterVg = sourceVg
                 measurement.meterIleak = sourceVg
-            if src_Vds in ('K2612', 'K2612 channel A') :
-                sourceVds = K2612(machine_adress,
-                                  slope=Vds_speed,
-                                  initialise=reset_instruments, reset=False)
-                measurement.sourceVds = sourceVds
-                measurement.meterVds = sourceVds
-                measurement.meterIds = sourceVds
-            elif src_Vds in ('K2612 channel B') :
+            if 'K2612' in src_Vds and (src_Vchuck.endswith("B") or "channel b" in src_Vds.lower()) :
                 sourceVds = K2612(machine_adress, channel='B',
                                   slope=Vds_speed,
                                   initialise=reset_instruments, reset=False)
                 measurement.sourceVds = sourceVds
                 measurement.meterVds = sourceVds
                 measurement.meterIds = sourceVds
-            if src_Vchuck in ('K2612 channel A') : 
+            elif 'K2612' in src_Vds :
+                sourceVds = K2612(machine_adress,
+                                  slope=Vds_speed,
+                                  initialise=reset_instruments, reset=False)
+                measurement.sourceVds = sourceVds
+                measurement.meterVds = sourceVds
+                measurement.meterIds = sourceVds
+            if 'K2612' in src_Vchuck and (src_Vchuck.endswith("A") or "channel a" in src_Vchuck.lower()) :
                 sourceVchuck = K2612(machine_adress,
-                                     slope=slope_vchuck,
+                                     slope=Vchuck_speed,
                                      initialise=reset_instruments)
                 measurement.sourceVchuck = sourceVchuck
                 measurement.meterVchuck = sourceVchuck
                 measurement.meterIchuck = sourceVchuck
-            elif src_Vchuck in ('K2612', 'K2612 channel B') :
+            elif 'K2612' in src_Vchuck : 
                 sourceVchuck = K2612(machine_adress, channel='B',
-                                     slope=slope_vchuck,
+                                     slope=Vchuck_speed,
                                      initialise=reset_instruments)
                 measurement.sourceVchuck = sourceVchuck
                 measurement.meterVchuck = sourceVchuck
                 measurement.meterIchuck = sourceVchuck
             print("⚡ K2612 voltage sources & ammeters are set up.")
-            print("------------------------------")
+            print("----------------------------------------")
         except Exception as exc :
             print("⛔ There has been an error setting up K2612 voltage sources.")
             raise exc
@@ -335,7 +333,7 @@ def initialise_voltage_sources(measurement, src_Vds, src_Vg, slope_vg_vd=.5,
             if 'Yoko' == src_Vchuck :
                 sourceVchuck = Yoko7651(machine_adress,
                                         initialise=reset_instruments, rang=30,
-                                        slope=slope_vchuck)
+                                        slope=Vchuck_speed)
                 measurement.sourceVchuck = sourceVchuck
             if 'Yoko' == src_Vg :
                 sourceVg = Yoko7651(machine_adress,
@@ -343,7 +341,7 @@ def initialise_voltage_sources(measurement, src_Vds, src_Vg, slope_vg_vd=.5,
                                     slope=Vg_speed)
                 measurement.sourceVg = sourceVg
             print("⚡ Yokogawa voltage source is set up.")
-            print("------------------------------")
+            print("----------------------------------------")
         except Exception as exc :
             print("⛔ There has been an error setting up Yokogawa voltage source.")
             raise exc
@@ -379,9 +377,164 @@ def initialise_voltage_sources(measurement, src_Vds, src_Vg, slope_vg_vd=.5,
                                                      filt = "2",
                                                      label = "Vdsm")
             print("⚡ BILT voltage sources and voltmeters are set up.")
-            print("------------------------------")
+            print("----------------------------------------")
         except Exception as exc :
             print("⛔ There has been an error setting up BILT voltage source.")
             raise exc
             
     return sourceVds, sourceVg, sourceVchuck
+
+
+
+def initialise_motors(measurement, reset_instruments=True) :
+    three_axis = 0#BSC203Motor()
+    if reset_instruments :
+        three_axis.home_x()
+        three_axis.home_y()
+        three_axis.home_z()
+    return three_axis
+
+
+
+def prepare_vna_saving(measurement, src_vna, filepath) :
+    vna = measurement.vna
+    vna_time = 0
+    if src_vna.lower() == 'zva67':
+        vna_channel_1 = vna.channel(1)
+        vna_pow = np.unique(np.asarray(vna_channel_1.get_frequency_segments())[:,5])
+        if len(vna_pow) == 1 :
+            vna_pow = vna_pow[0]
+        vna_time = vna_channel_1.total_sweep_time_ms / 1e3
+        vna_channel_1.save_frequency_segments(os.path.join(filepath, 'VNAconfig'))
+    elif src_vna.lower() == 'anritsu':
+        port1att = vna.get_source_att(1)
+        port2att = vna.get_source_att(2)
+        if port1att == port2att :
+            vna_pow -= port1att
+        vna_time = vna.get_sweep_time()
+        with open(os.path.join(filepath, 'VNAconfig'),'w') as f:
+            vna.dump_freq_segments(f)
+    return vna_time
+
+
+def initialise_vna(measurement, src_vna, reset_instruments=True, **kwargs) :    
+    """📻 Initialisation of Vector Network Analyzers 📻
+    
+    Supported machines :
+        'zva67'
+        'anritsu'
+    
+    returns both a a python object that allows communication with the machine &
+    the power (if a valid machine was specified ; otherwise returns None twice)
+    """
+    
+    vna = None
+    vna_pow = None
+    
+    try :
+        measurement_station = measurement.measurement_station
+    except AttributeError :
+        measurement_station = None
+
+    # Initialise VNA ZVA67
+    if src_vna.lower() == 'zva67' :
+        try :
+            print("📻 Setting up VNA ZVA67")
+            machine_adress = adress.zva67[measurement_station]
+            measurement.vna = vna = RohdeSchwarzVNA()
+            vna.open('TCPIP', machine_adress)
+            
+            c1 = vna.channel(1)
+            c1.init_nonblocking_sweep((1,2))
+            
+            if not c1.is_corrected() :
+                raise Exception('Please calibrate or switch on correction.')
+            if c1.sweep_type != 'SEGM':
+                raise Exception('Please use segmented frequency sweep')
+            
+            # check if the RF power is the same on both ports and for all
+            # frequency segments
+            vna_pow = np.unique(np.asarray(c1.get_frequency_segments())[:,5])
+            if len(vna_pow) > 1 :
+                raise Exception("Please select the same power for all ports and frequency segments")
+            vna_pow = vna_pow[0]
+            if c1.is_auto_attenuator(1) or c1.is_auto_attenuator(2) :
+                raise Exception("Please do not use automatic attenuators")
+            port1att = c1.get_attenuator(1)
+            if port1att == c1.get_attenuator(2) :
+                vna_pow -= port1att
+            else:
+                raise Exception("Please select the same attenuators for both ports")
+            
+            print("📻 VNA ZVA67 is set up.")
+            print("----------------------------------------")
+        except Exception as exc :
+            print("⛔ There has been an error setting up VNA ZVA67.")
+            raise exc
+        
+    # Initialise VNA ANRITSU
+    elif src_vna.lower() == 'anritsu' :
+        try :
+            print("📻 Setting up ANRITSU VNA")
+            machine_adress = adress.zva67[measurement_station]
+            vna = AnritsuVNA(machine_adress)
+            
+            if vna.get_sweep_type() != 'FSEGM' :
+                raise Exception('Please use segmented frequency sweep')
+
+            # check if the RF power is the same on both ports and for all
+            # frequency segments
+            count = int(vna.query(':SENS:FSEGM:COUN?'))
+            vna_pow = None
+            for i in range(1,count+1) :
+                port1pow = float(vna.query(':SENS:FSEGM{}:POW:PORT1?'.format(i)))
+                port2pow = float(vna.query(':SENS:FSEGM{}:POW:PORT2?'.format(i)))
+                if vna_pow is None and port1pow == port2pow :
+                    vna_pow = port1pow
+                elif vna_pow is not None and port1pow == port2pow and port1pow == vna_pow :
+                    continue
+                else :
+                    raise Exception("Please select the same power for all ports and frequency segments")
+            port1att = vna.get_source_att(1)
+            port2att = vna.get_source_att(2)
+            if port1att == port2att :
+                vna_pow -= port1att
+            else:
+                raise Exception("Please select the same attenuators for both ports")
+            
+            print("📻 ANRITSU VNA is set up.")
+            print("----------------------------------------")
+        except Exception as exc :
+            print("⛔ There has been an error setting up the ANRITSU VNA.")
+            raise exc
+    measurement.vna = vna
+    return vna, vna_pow
+
+
+
+def initialise_oscillo(measurement=None) :
+    return None
+    # Connexion to the oscilloscope
+    rm = pyvisa.ResourceManager()
+    scope = rm.open_resource(adress.dpo71604c)
+    if measurement is not None :
+        measurement.scope = scope
+    return scope
+
+
+def initialise_lockin(measurement=None) :
+    return None
+    try :
+        print("Setting up lock-in amplifier...")
+        rm=visa.ResourceManager()
+        lockin = rm.open_resource(adress.lockin_langevin)
+        lockin.read_termination='\n\00'
+        lockin.write_termination='\n\00'
+        print("Lock-in is set up")
+        print("----------------------------------------")
+    except Exception as exc :
+        print("⛔ There has been an error setting up lock-in amplifier.")
+        raise exc
+    if measurement is not None :
+        measurement.lockin = lockin
+    return lockin
